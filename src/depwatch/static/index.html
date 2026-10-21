@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>depwatch</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--mut:#666;--line:#e3e3e3;--card:#f7f7f8;--acc:#2457d6}
+@media (prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#ececec;--mut:#9a9a9a;--line:#33353a;--card:#1f2024;--acc:#7ea2ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}p.sub{color:var(--mut);margin:0 0 20px}
+textarea{width:100%;height:150px;font:13px ui-monospace,monospace;padding:10px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;margin:10px 8px 0 0}
+button.alt{background:transparent;color:var(--acc);border:1px solid var(--acc)}button:disabled{opacity:.5}
+table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px}
+td:nth-child(4){white-space:nowrap}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;margin:0 4px 2px 0;border:1px solid var(--line)}
+.bad{background:#fde8e8;color:#a31616;border-color:#f3b9b9}.warn{background:#fff3d6;color:#7a5200;border-color:#efd08a}
+.ok{background:#e3f6e8;color:#12622b;border-color:#a9dcb7}
+@media (prefers-color-scheme:dark){.bad{background:#4a1d1d;color:#ffb4b4;border-color:#7a3030}.warn{background:#4a3a14;color:#ffd98a;border-color:#7a6224}.ok{background:#17391f;color:#9de0b0;border-color:#2c6b3d}}
+#summary{margin-top:16px;font-weight:600}#err{color:#c0392b;margin-top:10px}
+pre#report{white-space:pre-wrap;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:16px;display:none}
+</style></head><body><main>
+<h1>depwatch</h1>
+<p class="sub">Paste a requirements.txt. Each package is checked live against PyPI.</p>
+<textarea id="req" spellcheck="false">requests==2.19.0
+flask>=3.0
+numpy==2.1.0
+pyyaml==6.0.3
+not-a-real-pkg-zzzq==1.0</textarea>
+<div><button id="go">Audit</button><button id="ai" class="alt">Write AI report</button></div>
+<div id="err"></div><div id="summary"></div>
+<table id="tbl" style="display:none"><thead><tr><th>Package</th><th>Pinned</th><th>Latest</th><th>Age</th><th>License</th><th>Flags</th></tr></thead><tbody></tbody></table>
+<pre id="report"></pre>
+<script>
+const $=id=>document.getElementById(id);
+const SEV={OUTDATED:'warn',UNPINNED:'warn',STALE:'warn',NO_LICENSE_METADATA:'warn',LATEST_YANKED:'bad',NOT_FOUND_ON_PYPI:'bad',UNCOMPARABLE_VERSION:'warn'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function age(d){if(d==null)return '';return d>730?(d/365).toFixed(1)+' yr':d+' d'}
+async function post(url,body){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
+$('go').onclick=async()=>{
+  $('err').textContent='';$('go').disabled=true;$('go').textContent='Checking...';
+  try{
+    const j=await post('/api/audit',{requirements:$('req').value});
+    $('tbl').style.display='';
+    $('tbl').tBodies[0].innerHTML=j.packages.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.pinned||p.specifier||'')}</td><td>${esc(p.latest)}</td><td>${age(p.days_since_release)}</td><td>${esc(p.license||'')}</td><td>${p.flags.length?p.flags.map(f=>`<span class="chip ${SEV[f]||'warn'}">${f}</span>`).join(''):'<span class="chip ok">OK</span>'}</td></tr>`).join('');
+    $('summary').textContent=`${j.needs_attention} of ${j.packages.length} packages need attention`;
+  }catch(e){$('err').textContent=e.message}
+  $('go').disabled=false;$('go').textContent='Audit'};
+$('ai').onclick=async()=>{
+  $('err').textContent='';$('ai').disabled=true;$('ai').textContent='Asking Claude...';
+  try{const j=await post('/api/report',{requirements:$('req').value});$('report').style.display='block';$('report').textContent=j.report}
+  catch(e){$('err').textContent=e.message}
+  $('ai').disabled=false;$('ai').textContent='Write AI report'};
+</script></main></body></html>
