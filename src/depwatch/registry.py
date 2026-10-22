@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,6 +13,18 @@ USER_AGENT = "depwatch-mcp/0.1"
 
 class PackageNotFound(Exception):
     pass
+
+
+# Names go into registry URLs, so only accept what the registries themselves allow.
+PYPI_NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
+NPM_NAME_RE = re.compile(r"^(@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$")
+MAX_NAME_LENGTH = 214
+
+
+def validate_name(ecosystem: str, name: str) -> None:
+    pattern = PYPI_NAME_RE if ecosystem == "pypi" else NPM_NAME_RE
+    if len(name) > MAX_NAME_LENGTH or not pattern.match(name):
+        raise ValueError(f"Invalid {ecosystem} package name: {name!r}")
 
 
 def _days_since(iso_timestamp: str | None, now: datetime | None = None) -> int | None:
@@ -69,6 +82,9 @@ async def npm_info(client: httpx.AsyncClient, name: str) -> dict[str, Any]:
 
 
 async def package_info(client: httpx.AsyncClient, ecosystem: str, name: str) -> dict[str, Any]:
+    if ecosystem not in ("pypi", "npm"):
+        raise ValueError(f"Unsupported ecosystem: {ecosystem!r} (use 'pypi' or 'npm')")
+    validate_name(ecosystem, name)
     if ecosystem == "pypi":
         return await pypi_info(client, name)
     if ecosystem == "npm":

@@ -27,3 +27,11 @@ def test_report_requires_api_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     resp = TestClient(web.app).post("/api/report", json={"requirements": "x==1"})
     assert resp.status_code == 503
+
+
+def test_malformed_and_oversized_bodies_return_400():
+    client = TestClient(web.app)
+    assert client.post("/api/audit", content=b"not json").status_code == 400
+    assert client.post("/api/audit", json=["a"]).status_code == 400
+    too_many = "\n".join(f"pkg{i}==1" for i in range(300))
+    assert client.post("/api/audit", json={"requirements": too_many}).status_code == 400

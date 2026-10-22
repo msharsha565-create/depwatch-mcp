@@ -10,6 +10,8 @@ from packaging.version import InvalidVersion, Version
 from depwatch.registry import PackageNotFound, pypi_info
 
 STALE_AFTER_DAYS = 730
+MAX_PACKAGES = 200
+MAX_CONCURRENCY = 8
 
 
 def parse_requirements(text: str) -> tuple[list[Requirement], list[str]]:
@@ -67,12 +69,16 @@ def assess(req: Requirement, info: dict[str, Any]) -> dict[str, Any]:
 
 async def audit_requirements(client: httpx.AsyncClient, text: str) -> dict[str, Any]:
     reqs, skipped = parse_requirements(text)
+    if len(reqs) > MAX_PACKAGES:
+        raise ValueError(f"Too many packages ({len(reqs)}); the limit is {MAX_PACKAGES}.")
+    gate = asyncio.Semaphore(MAX_CONCURRENCY)  # be polite to PyPI
 
     async def one(req: Requirement) -> dict[str, Any]:
-        try:
-            return assess(req, await pypi_info(client, req.name))
-        except PackageNotFound:
-            return {"name": req.name, "flags": ["NOT_FOUND_ON_PYPI"]}
+        async with gate:
+            try:
+                return assess(req, await pypi_info(client, req.name))
+            except PackageNotFound:
+                return {"name": req.name, "flags": ["NOT_FOUND_ON_PYPI"]}
 
     packages = await asyncio.gather(*(one(r) for r in reqs))
     return {

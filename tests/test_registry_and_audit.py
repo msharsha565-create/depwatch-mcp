@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from depwatch import audit as audit_module
 from depwatch.audit import audit_requirements, parse_requirements
 from depwatch.registry import PackageNotFound, package_info
 
@@ -71,3 +72,49 @@ async def test_audit_flags():
     assert flags["nolic"] == ["UNPINNED", "NO_LICENSE_METADATA"]
     assert flags["ghost"] == ["NOT_FOUND_ON_PYPI"]
     assert result["needs_attention"] == 4
+
+
+@pytest.mark.parametrize("ecosystem,name", [
+    ("pypi", "../../etc/passwd"), ("pypi", "a/b"), ("pypi", "a b"), ("pypi", ""),
+    ("npm", "../x"), ("npm", "@scope/../x"), ("npm", "UPPER"), ("npm", "a" * 300),
+])
+async def test_invalid_package_names_are_rejected_before_any_request(ecosystem, name):
+    def handler(request):
+        raise AssertionError("no request should be made")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        with pytest.raises(ValueError):
+            await package_info(c, ecosystem, name)
+
+
+async def test_scoped_npm_names_are_accepted():
+    doc = {"name": "@types/node", "dist-tags": {"latest": "1.0.0"}, "time": {"1.0.0": OLD},
+           "versions": {"1.0.0": {"license": "MIT"}}}
+    async with make_client({"/@types/node": doc}) as c:
+        assert (await package_info(c, "npm", "@types/node"))["latest_version"] == "1.0.0"
+
+
+async def test_audit_rejects_oversized_requirement_lists():
+    text = "\n".join(f"pkg{i}==1.0" for i in range(audit_module.MAX_PACKAGES + 1))
+    async with make_client({}) as c:
+        with pytest.raises(ValueError, match="Too many packages"):
+            await audit_requirements(c, text)
+
+
+async def test_audit_limits_concurrent_registry_requests():
+    import asyncio
+
+    state = {"now": 0, "peak": 0}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        state["now"] += 1
+        state["peak"] = max(state["peak"], state["now"])
+        await asyncio.sleep(0.01)
+        state["now"] -= 1
+        name = request.url.path.split("/")[2]
+        return httpx.Response(200, json=pypi_doc(name, "1.0", "2999-01-01T00:00:00Z"))
+
+    text = "\n".join(f"pkg{i}==1.0" for i in range(40))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+        await audit_requirements(c, text)
+    assert 1 < state["peak"] <= audit_module.MAX_CONCURRENCY

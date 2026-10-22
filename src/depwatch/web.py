@@ -16,12 +16,21 @@ INDEX = (Path(__file__).parent / "static" / "index.html").read_text()
 MAX_REQUIREMENTS_CHARS = 20_000
 
 
+class InvalidInput(ValueError):
+    """The request body is unusable; reported to the client as HTTP 400."""
+
+
 async def index(request: Request) -> HTMLResponse:
     return HTMLResponse(INDEX)
 
 
 async def _requirements(request: Request) -> str:
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise InvalidInput("Body must be a JSON object.")
     text = str(body.get("requirements", ""))
     if not text.strip():
         raise ValueError("Paste a requirements.txt first.")
@@ -38,6 +47,8 @@ async def api_audit(request: Request) -> JSONResponse:
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             return JSONResponse(await audit.audit_requirements(client, text))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     except httpx.HTTPError as exc:
         return JSONResponse({"error": f"Registry request failed: {exc}"}, status_code=502)
 
