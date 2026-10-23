@@ -18,7 +18,7 @@ depwatch-web          # open http://127.0.0.1:8000
 ```
 
 Paste a `requirements.txt` and click **Audit**: each package is checked live against PyPI and shown
-in a table with colored flags. **Write AI report** additionally needs `ANTHROPIC_API_KEY`
+in a table with colored flags. **Write AI report** additionally needs an API key (see "Run the agent" below)
 (the agent calls the MCP tools and writes the report).
 
 ## MCP tools
