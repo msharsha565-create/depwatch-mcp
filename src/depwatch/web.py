@@ -53,18 +53,35 @@ async def api_audit(request: Request) -> JSONResponse:
         return JSONResponse({"error": f"Registry request failed: {exc}"}, status_code=502)
 
 
+def report_settings() -> tuple[str, str, str | None, str | None]:
+    """AI-report backend from the environment: DEPWATCH_PROVIDER (anthropic|openai),
+    DEPWATCH_MODEL, DEPWATCH_BASE_URL, DEPWATCH_API_KEY_ENV (name of the key variable)."""
+    from depwatch.cli import DEFAULT_MODEL
+
+    provider = os.environ.get("DEPWATCH_PROVIDER", "anthropic")
+    key_env = os.environ.get("DEPWATCH_API_KEY_ENV") or (
+        "OPENAI_API_KEY" if provider == "openai" else "ANTHROPIC_API_KEY")
+    model = os.environ.get("DEPWATCH_MODEL") or (None if provider == "openai" else DEFAULT_MODEL)
+    return provider, model or "", os.environ.get("DEPWATCH_BASE_URL"), os.environ.get(key_env)
+
+
 async def api_report(request: Request) -> JSONResponse:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    provider, model, base_url, api_key = report_settings()
+    if not api_key or not model:
         return JSONResponse(
-            {"error": "Set ANTHROPIC_API_KEY and restart to enable AI reports."}, status_code=503
-        )
+            {"error": "AI reports are off. Set an API key (and DEPWATCH_MODEL for "
+                      "DEPWATCH_PROVIDER=openai), then restart."}, status_code=503)
     try:
         text = await _requirements(request)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    from depwatch.cli import DEFAULT_MODEL, _run
+    from depwatch.cli import _run
 
-    report = await _run(f"Audit this requirements.txt:\n\n{text}", DEFAULT_MODEL)
+    try:
+        report = await _run(f"Audit this requirements.txt:\n\n{text}", model, provider,
+                            base_url, api_key)
+    except (httpx.HTTPError, RuntimeError) as exc:
+        return JSONResponse({"error": f"AI report failed: {exc}"}, status_code=502)
     return JSONResponse({"report": report})
 
 

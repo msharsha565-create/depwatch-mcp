@@ -37,15 +37,27 @@ reports its deprecation notice.
 { "mcpServers": { "depwatch": { "command": "depwatch-mcp-server" } } }
 ```
 
-## Run the agent (live)
+## Run the agent
 
-Needs an Anthropic API key; this makes real API calls.
+The agent runs on Claude by default, or on any OpenAI-compatible tool-calling API (OpenAI, Gemini,
+Ollama, vLLM). Live runs make real, billable API calls.
 
 ```bash
 pip install -e ".[dev]"
+
+# Claude (default)
 export ANTHROPIC_API_KEY=...
 depwatch-agent requirements.txt
+
+# Gemini, via Google's OpenAI-compatible endpoint (use a current model name)
+GEMINI_API_KEY=... depwatch-agent requirements.txt \
+    --provider openai --api-key-env GEMINI_API_KEY --model <gemini-model> \
+    --base-url https://generativelanguage.googleapis.com/v1beta/openai
 ```
+
+The web demo's **Write AI report** button reads the same settings from the environment:
+`DEPWATCH_PROVIDER` (`anthropic` or `openai`), `DEPWATCH_MODEL`, `DEPWATCH_BASE_URL` and
+`DEPWATCH_API_KEY_ENV` (the name of the variable holding the key).
 
 ## Tests
 
@@ -55,8 +67,10 @@ ruff check src tests
 ```
 
 Registry and audit logic are tested offline with a mocked HTTP transport; the MCP server is
-tested over an in-memory transport; the agent loop uses a scripted fake Anthropic client. The
-live agent run is exercised manually.
+tested over an in-memory transport; both agent backends use scripted fake models, and the
+OpenAI-compatible client is tested against a mocked transport (request format, retries on
+429/5xx, error bodies, provider metadata echoed back). A live agent run has not been recorded
+here yet.
 
 ## Limitations
 
