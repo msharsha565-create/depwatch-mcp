@@ -27,6 +27,13 @@ async def _run(task: str, model: str, provider: str = "anthropic", base_url: str
         return await run_agent(task, session, AsyncAnthropic(), model=model)
 
 
+def _root_cause(exc: BaseException) -> BaseException:
+    """The MCP client wraps failures in nested exception groups; show the real error."""
+    while getattr(exc, "exceptions", None):
+        exc = exc.exceptions[0]
+    return exc
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="depwatch-agent", description=__doc__)
     parser.add_argument("requirements", help="Path to a requirements.txt to audit")
@@ -50,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
     with open(args.requirements) as f:
         task = f"Audit this requirements.txt:\n\n{f.read()}"
     model = args.model or DEFAULT_MODEL
-    print(asyncio.run(_run(task, model, args.provider, args.base_url, api_key)))
+    try:
+        print(asyncio.run(_run(task, model, args.provider, args.base_url, api_key)))
+    except Exception as exc:  # noqa: BLE001 - CLI boundary: report any failure without a traceback
+        print(f"error: {_root_cause(exc)}", file=sys.stderr)
+        return 1
     return 0
 
 

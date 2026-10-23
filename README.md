@@ -49,9 +49,9 @@ pip install -e ".[dev]"
 export ANTHROPIC_API_KEY=...
 depwatch-agent requirements.txt
 
-# Gemini, via Google's OpenAI-compatible endpoint (use a current model name)
+# Gemini, via Google's OpenAI-compatible endpoint (Gemini 2.5 is retired; use a current model)
 GEMINI_API_KEY=... depwatch-agent requirements.txt \
-    --provider openai --api-key-env GEMINI_API_KEY --model <gemini-model> \
+    --provider openai --api-key-env GEMINI_API_KEY --model gemini-3.5-flash-lite \
     --base-url https://generativelanguage.googleapis.com/v1beta/openai
 ```
 
@@ -69,8 +69,30 @@ ruff check src tests
 Registry and audit logic are tested offline with a mocked HTTP transport; the MCP server is
 tested over an in-memory transport; both agent backends use scripted fake models, and the
 OpenAI-compatible client is tested against a mocked transport (request format, retries on
-429/5xx, error bodies, provider metadata echoed back). A live agent run has not been recorded
-here yet.
+429/5xx, error bodies, provider metadata echoed back). The Claude (Anthropic) path has not been
+run live.
+
+### Live result
+
+Gemini `gemini-3.5-flash-lite`, free tier, 2026-10-23, one run (~5 s) on this file:
+
+```
+requests==2.19.0
+flask==0.12.2
+django==2.2.0
+numpy
+pyyaml==5.1
+```
+
+The agent called `audit_requirements` over MCP, which queried PyPI live, and wrote a table.
+`requests`, `flask`, `django` and `pyyaml` were flagged `OUTDATED`, `numpy` `UNPINNED`. Latest
+versions in the report (requests 2.34.2, flask 3.1.3, django 6.1.2, numpy 2.5.4, pyyaml 6.0.3)
+matched PyPI when I checked. The recommendations are the model's own prose: for example it says
+old PyYAML has known vulnerabilities, which the tool does not check (see Limitations).
+
+On this key `gemini-3.1-flash-lite` and `gemini-3.5-flash` returned intermittent free-tier 429s,
+so use `gemini-3.5-flash-lite` or similar. A failed run now prints `error: ...` with the
+provider's message instead of a traceback.
 
 ## Limitations
 

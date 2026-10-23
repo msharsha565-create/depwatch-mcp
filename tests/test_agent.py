@@ -221,3 +221,20 @@ def test_cli_provider_openai_uses_named_key_and_requires_model(monkeypatch, tmp_
     assert cli.main([str(req), "--provider", "openai", "--api-key-env", "GEMINI_API_KEY"]) == 2
     assert cli.main([str(req), "--provider", "openai"]) == 2
     assert "is not set" in capsys.readouterr().err
+
+
+def test_agent_cli_reports_the_root_cause_not_an_exception_group(monkeypatch, capsys, tmp_path):
+    from depwatch import cli
+
+    async def failing_run(*args, **kwargs):
+        group = Exception("unhandled errors in a TaskGroup")
+        group.exceptions = [ValueError("429 from api")]  # shape of an (Base)ExceptionGroup
+        raise group
+
+    reqs = tmp_path / "requirements.txt"
+    reqs.write_text("requests==2.19.0\n")
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setattr(cli, "_run", failing_run)
+    argv = [str(reqs), "--provider", "openai", "--api-key-env", "GEMINI_API_KEY", "--model", "m"]
+    assert cli.main(argv) == 1
+    assert capsys.readouterr().err.strip() == "error: 429 from api"
